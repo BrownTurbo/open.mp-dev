@@ -57,6 +57,12 @@ public:
 	DefaultEventDispatcher<PawnEventHandler> eventDispatcher;
 	PawnPluginManager pluginManager;
 
+	PawnScript* getScript(AMX* amx)
+	{
+		auto it = amxToScript_.find(amx);
+		return (it != amxToScript_.end()) ? it->second : nullptr;
+	}
+
 private:
 	int gamemodeIndex_ = 0;
 	int gamemodeRepeat_ = 1;

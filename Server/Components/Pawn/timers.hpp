@@ -161,6 +161,11 @@ struct PawnTimerHandler final : TimerTimeOutHandler, PoolIDProvider
 		else
 		{
 			PawnManager::Get()->core->logLn(LogLevel::Error, "SetTimer(Ex): There was a problem in calling %.*s: %s", PRINT_VIEW(callback), aux_StrError(err));
+			IPawnScript* script = PawnManager::Get()->getScript(amx);
+			if (script && err != AMX_ERR_NONE)
+			{
+				script->PrintError(err);
+			}
 
 			// Raising an error here will cause the entire mode to stop executing in some cases.
 			// amx_RaiseError(amx, err);

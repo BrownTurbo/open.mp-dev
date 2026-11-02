@@ -50,6 +50,11 @@ void PawnScript::tryLoad(std::string const& path)
 {
 	if (loaded_)
 	{
+		if (amxdbg_.hdr != nullptr)
+		{
+			dbg_FreeInfo(&amxdbg_);
+			memset(&amxdbg_, 0, sizeof(amxdbg_));
+		}
 		amx_FloatCleanup(&amx_);
 		amx_TimeCleanup(&amx_);
 		amx_StringCleanup(&amx_);
@@ -93,6 +98,13 @@ encountered.  This could be caused by many things:
 	}
 	if (loaded_)
 	{
+		memset(&amxdbg_, 0, sizeof(amxdbg_));
+		FILE* fp = fopen(path.c_str(), "rb");
+		if (fp)
+		{
+			dbg_LoadInfo(&amxdbg_, fp);
+			fclose(fp);
+		}
 		amx_ArgsInit(&amx_);
 		amx_CoreInit(&amx_);
 		amx_FileInit(&amx_);
@@ -108,6 +120,7 @@ PawnScript::PawnScript(int id, std::string const& path, ICore* core)
 	, loaded_(false)
 	, id_(id)
 {
+	memset(&amxdbg_, 0, sizeof(amxdbg_));
 	tryLoad(path);
 }
 
@@ -530,4 +543,199 @@ __attribute__((optnone)) int AMXAPI amx_Allot(AMX* amx, int cells, cell* amx_add
 __attribute__((optnone)) int AMXAPI amx_Register(AMX* amx, const AMX_NATIVE_INFO* list, int number)
 {
 	return amx_Register_impl(amx, list, number);
+}
+
+void PawnScript::PrintError(int err)
+{
+	if (!serverCore)
+	{
+		return;
+	}
+
+	serverCore->logLn(LogLevel::Error, "Run time error %d: \"%s\"", err, aux_StrError(err));
+
+	AMX* amx = &amx_;
+	if (!amx->base)
+	{
+		return;
+	}
+
+	AMX_HEADER* hdr = reinterpret_cast<AMX_HEADER*>(amx->base);
+	unsigned char* data = (amx->data != nullptr) ? amx->data : (amx->base + static_cast<uintptr_t>(hdr->dat));
+	ucell codesize = static_cast<ucell>(hdr->dat - hdr->cod);
+
+	// 1. Detailed error diagnosis
+	if (err == AMX_ERR_BOUNDS)
+	{
+		cell index = amx->pri;
+		cell max_bound = amx->alt;
+		cell size = max_bound + 1;
+		serverCore->logLn(LogLevel::Error, "  Attempted to read/write array element at index %d in array of size %d",
+			static_cast<int>(index), static_cast<int>(size));
+	}
+	else if (err == AMX_ERR_STACKERR)
+	{
+		serverCore->logLn(LogLevel::Error, "  Stack/heap collision: stack pointer 0x%08X collided with heap 0x%08X (insufficient stack size)",
+			static_cast<uint32_t>(amx->stk), static_cast<uint32_t>(amx->hea));
+		serverCore->logLn(LogLevel::Error, "  You can increase available stack size using '#pragma dynamic <size>'");
+	}
+	else if (err == AMX_ERR_DIVIDE)
+	{
+		serverCore->logLn(LogLevel::Error, "  Divide by zero");
+	}
+	else if (err == AMX_ERR_MEMACCESS)
+	{
+		serverCore->logLn(LogLevel::Error, "  Invalid memory access");
+	}
+
+	serverCore->logLn(LogLevel::Error, "AMX backtrace:");
+
+	cell cur_cip = amx->cip;
+	cell cur_frm = amx->frm;
+	int frame_idx = 0;
+
+	bool has_debug_symbols = (amxdbg_.hdr != nullptr);
+
+	while (frame_idx < 32)
+	{
+		if (cur_cip < 0 || static_cast<ucell>(cur_cip) >= codesize)
+		{
+			break;
+		}
+
+		const char* funcname = nullptr;
+		const char* filename = nullptr;
+		long line = 0;
+
+		if (has_debug_symbols)
+		{
+			dbg_LookupFunction(&amxdbg_, static_cast<ucell>(cur_cip), &funcname);
+			dbg_LookupFile(&amxdbg_, static_cast<ucell>(cur_cip), &filename);
+			dbg_LookupLine(&amxdbg_, static_cast<ucell>(cur_cip), &line);
+		}
+
+		// Fallback: search enclosing public function from AMX header if name not in debug table
+		std::string public_name;
+		if (!funcname)
+		{
+			int numpublics = 0;
+			amx_NumPublics(amx, &numpublics);
+			ucell best_addr = 0;
+			const char* best_name = nullptr;
+			for (int i = 0; i < numpublics; ++i)
+			{
+				AMX_FUNCPART* func = GETENTRY(hdr, publics, i);
+				if (func->address <= static_cast<ucell>(cur_cip))
+				{
+					if (best_name == nullptr || func->address >= best_addr)
+					{
+						best_addr = func->address;
+						best_name = GETENTRYNAME(hdr, func);
+					}
+				}
+			}
+			if (best_name)
+			{
+				if (strcmp(best_name, "main") == 0)
+				{
+					public_name = "main";
+				}
+				else
+				{
+					public_name = std::string("public ") + best_name;
+				}
+				funcname = public_name.c_str();
+			}
+			else if (hdr->cip >= 0 && static_cast<ucell>(hdr->cip) <= static_cast<ucell>(cur_cip))
+			{
+				funcname = "main";
+			}
+			else
+			{
+				funcname = "??";
+			}
+		}
+
+		// Read parameters from stack frame
+		std::string params_str;
+		if (cur_frm >= amx->hea && cur_frm < amx->stp && (cur_frm % sizeof(cell) == 0))
+		{
+			cell arg_bytes = *reinterpret_cast<cell*>(data + cur_frm + 2 * sizeof(cell));
+			int num_args = static_cast<int>(arg_bytes / sizeof(cell));
+			if (num_args > 0 && num_args <= 32)
+			{
+				for (int a = 0; a < num_args; ++a)
+				{
+					cell val = *reinterpret_cast<cell*>(data + cur_frm + (3 + a) * sizeof(cell));
+					const char* arg_name = nullptr;
+
+					if (has_debug_symbols)
+					{
+						cell target_addr = static_cast<cell>((3 + a) * sizeof(cell));
+						for (int s = 0; s < amxdbg_.hdr->symbols; ++s)
+						{
+							AMX_DBG_SYMBOL* sym = amxdbg_.symboltbl[s];
+							if (sym->ident != iFUNCTN
+								&& sym->codestart <= static_cast<ucell>(cur_cip)
+								&& sym->codeend > static_cast<ucell>(cur_cip)
+								&& sym->address == static_cast<ucell>(target_addr))
+							{
+								arg_name = sym->name;
+								break;
+							}
+						}
+					}
+
+					if (a > 0)
+					{
+						params_str += ", ";
+					}
+					if (arg_name && arg_name[0] != '\0')
+					{
+						params_str += arg_name;
+						params_str += "=";
+					}
+					params_str += std::to_string(val);
+				}
+			}
+		}
+
+		if (filename && line > 0)
+		{
+			serverCore->logLn(LogLevel::Error, "#%d %08x in %s (%s) at %s:%ld",
+				frame_idx++, static_cast<uint32_t>(cur_cip), funcname, params_str.c_str(), filename, line);
+		}
+		else
+		{
+			serverCore->logLn(LogLevel::Error, "#%d %08x in %s (%s) in <%s>",
+				frame_idx++, static_cast<uint32_t>(cur_cip), funcname, params_str.c_str(), filename ? filename : "unknown");
+		}
+
+		// Next frame
+		if (cur_frm < amx->hea || cur_frm >= amx->stp || (cur_frm % sizeof(cell) != 0))
+		{
+			break;
+		}
+
+		cell next_frm = *reinterpret_cast<cell*>(data + cur_frm);
+		cell ret_cip = *reinterpret_cast<cell*>(data + cur_frm + sizeof(cell));
+
+		if (ret_cip <= 0 || static_cast<ucell>(ret_cip) >= codesize)
+		{
+			break;
+		}
+
+		if (next_frm <= cur_frm || next_frm >= amx->stp)
+		{
+			break;
+		}
+
+		cur_cip = ret_cip - 1;
+		cur_frm = next_frm;
+	}
+
+	if (!has_debug_symbols)
+	{
+		serverCore->logLn(LogLevel::Warning, "Note: Compile your Pawn script with the '-d3' flag to see exact file names and line numbers in backtraces.");
+	}
 }

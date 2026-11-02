@@ -7,8 +7,13 @@
  */
 
 #include "databases_component.hpp"
+#include <string>
 
 DatabasesComponent::DatabasesComponent()
+	: logSQLite_(nullptr)
+	, logSQLiteQueries_(nullptr)
+	, sqliteTimeout_(nullptr)
+	, core_(nullptr)
 {
 }
 
@@ -28,12 +33,17 @@ void DatabasesComponent::onLoad(ICore* c)
 	core_ = c;
 	logSQLite_ = core_->getConfig().getBool("logging.log_sqlite");
 	logSQLiteQueries_ = core_->getConfig().getBool("logging.log_sqlite_queries");
+	sqliteTimeout_ = core_->getConfig().getInt("database.sqlite_timeout");
+	if (!sqliteTimeout_)
+	{
+		sqliteTimeout_ = core_->getConfig().getInt("sqlite_timeout");
+	}
 }
 
 /// To optionally log things from connections.
 void DatabasesComponent::log(LogLevel level, const char* fmt, ...) const
 {
-	if (core_ && logSQLite_ && *logSQLite_)
+	if (core_ && (level == LogLevel::Error || (logSQLite_ && *logSQLite_)))
 	{
 		va_list args;
 		va_start(args, fmt);
@@ -66,10 +76,23 @@ IDatabaseConnection* DatabasesComponent::open(StringView path, int flags)
 	}
 	DatabaseConnection* ret(nullptr);
 	sqlite3* database_connection_handle(nullptr);
-	if (sqlite3_open_v2(path.data(), &database_connection_handle, flags, nullptr) == SQLITE_OK)
+	std::string pathString(path.data(), path.length());
+	if (sqlite3_open_v2(pathString.c_str(), &database_connection_handle, flags, nullptr) == SQLITE_OK)
 	{
+		if (sqliteTimeout_ && *sqliteTimeout_ > 0)
+		{
+			sqlite3_busy_timeout(database_connection_handle, *sqliteTimeout_);
+		}
 		ret = databaseConnections.emplace(this, database_connection_handle);
 		if (!ret)
+		{
+			sqlite3_close_v2(database_connection_handle);
+		}
+	}
+	else
+	{
+		this->log(LogLevel::Error, "[log_sqlite]: Cannot open database '%.*s': %s", PRINT_VIEW(path), sqlite3_errmsg(database_connection_handle));
+		if (database_connection_handle)
 		{
 			sqlite3_close_v2(database_connection_handle);
 		}

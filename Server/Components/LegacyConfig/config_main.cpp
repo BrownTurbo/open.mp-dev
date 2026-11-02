@@ -116,6 +116,7 @@ const FlatHashMap<StringView, StringView> dictionary = {
 	{ "chatlogging", "logging.log_chat" },
 	{ "db_logging", "logging.log_sqlite" },
 	{ "db_log_queries", "logging.log_sqlite_queries" },
+	{ "sqlite_timeout", "database.sqlite_timeout" },
 	{ "onfoot_rate", "network.on_foot_sync_rate" },
 	{ "incar_rate", "network.in_vehicle_sync_rate" },
 	{ "weapon_rate", "network.aiming_sync_rate" },

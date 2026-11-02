@@ -24,6 +24,7 @@
 
 #include <amx/amx.h>
 #include <amx/amxaux.h>
+#include <amx/amxdbg.h>
 
 using namespace Impl;
 
@@ -124,7 +125,7 @@ public:
 	void SetFRM(cell v) override { amx_.frm = v; }
 
 	AMX* GetAMX() override { return &amx_; }
-	void PrintError(int err) override { serverCore->logLn(LogLevel::Error, "%s", aux_StrError(err)); }
+	void PrintError(int err) override;
 	int GetID() const override { return id_; }
 	bool IsLoaded() const override { return loaded_; }
 
@@ -402,6 +403,7 @@ private:
 private:
 	ICore* serverCore;
 	AMX amx_;
+	AMX_DBG amxdbg_ = {};
 	AMXCache cache_;
 	bool loaded_;
 	String name_;

@@ -7,6 +7,7 @@
  */
 
 #include "databases_component.hpp"
+#include <string>
 
 DatabaseConnection::DatabaseConnection(DatabasesComponent* parentDatabasesComponent, sqlite3* databaseConnectionHandle)
 	: parentDatabasesComponent(parentDatabasesComponent)
@@ -28,7 +29,7 @@ bool DatabaseConnection::close()
 	bool ret(databaseConnectionHandle != nullptr);
 	if (ret)
 	{
-		sqlite3_close(databaseConnectionHandle);
+		sqlite3_close_v2(databaseConnectionHandle);
 		databaseConnectionHandle = nullptr;
 	}
 	return ret;
@@ -42,11 +43,22 @@ IDatabaseResultSet* DatabaseConnection::executeQuery(StringView query)
 	IDatabaseResultSet* ret(parentDatabasesComponent->createResultSet());
 	if (ret)
 	{
-		// TODO: Properly handle errors
 		parentDatabasesComponent->logQuery("[log_sqlite_queries]: %.*s", PRINT_VIEW(query));
-		if (sqlite3_exec(databaseConnectionHandle, query.data(), queryStepExecuted, ret, nullptr) != SQLITE_OK)
+
+		char* sqlError = nullptr;
+		std::string queryString(query.data(), query.length());
+		int sqlRet = sqlite3_exec(databaseConnectionHandle, queryString.c_str(), queryStepExecuted, ret, &sqlError);
+		if (sqlRet != SQLITE_OK)
 		{
-			parentDatabasesComponent->log(LogLevel::Error, "[log_sqlite]: Error executing query.");
+			if (sqlError)
+			{
+				parentDatabasesComponent->log(LogLevel::Error, "[log_sqlite]: Error executing query (%s): %.*s", sqlError, PRINT_VIEW(query));
+				sqlite3_free(sqlError);
+			}
+			else
+			{
+				parentDatabasesComponent->log(LogLevel::Error, "[log_sqlite]: Error executing query (%s): %.*s", sqlite3_errmsg(databaseConnectionHandle), PRINT_VIEW(query));
+			}
 			parentDatabasesComponent->freeResultSet(*ret);
 			ret = nullptr;
 		}

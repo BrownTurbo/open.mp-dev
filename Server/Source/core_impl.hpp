@@ -99,6 +99,7 @@ static const std::map<String, ConfigStorage> Defaults {
 	{ "logging.log_queries", false },
 	{ "logging.log_sqlite", false },
 	{ "logging.log_sqlite_queries", false },
+	{ "database.sqlite_timeout", 5000 },
 	{ "logging.timestamp_format", String("[%Y-%m-%dT%H:%M:%S%z]") },
 	{ "logging.use_timestamp", true },
 	{ "logging.use_prefix", true },
