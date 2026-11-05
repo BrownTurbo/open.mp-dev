@@ -1,6 +1,6 @@
 [submodule "lib/pawn"]
 	path = lib/pawn
-	url = https://github.com/openmultiplayer/compiler.git
+	url = https://github.com/BrownTurbo/pawn-compiler-dev
 [submodule "lib/pawn-natives"]
 	path = lib/pawn-natives
 	url = https://github.com/openmultiplayer/pawn-natives.git
@@ -16,6 +16,7 @@
 [submodule "SDK"]
 	path = SDK
 	url = https://github.com/BrownTurbo/open.mp-sdk-dev
+	branch = zorono/dev
 [submodule "Shared/Network"]
 	path = Shared/Network
 	url = https://github.com/openmultiplayer/open.mp-network

@@ -11,6 +11,7 @@
 #include "player_impl.hpp"
 #include <Server/Components/Console/console.hpp>
 #include <Server/Components/NPCs/npcs.hpp>
+#include <iterator>
 #include <utils.hpp>
 
 struct PlayerPool final : public IPlayerPool, public NetworkEventHandler, public PlayerUpdateEventHandler, public CoreEventHandler
@@ -1349,7 +1350,7 @@ struct PlayerPool final : public IPlayerPool, public NetworkEventHandler, public
 			0xD8C762FF,
 			0xD8C762FF,
 		};
-		return Colour::FromRGBA(colours[pid % GLM_COUNTOF(colours)]);
+		return Colour::FromRGBA(colours[pid % std::size(colours)]);
 	}
 
 	void initPlayer(Player& player)
