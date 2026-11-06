@@ -163,7 +163,7 @@ endif()
 endif()
 
 if(BUILD_ABI_CHECK_TOOL)
-	find_package(libelfin CONFIG REQUIRED)
+    find_package(libelfin CONFIG REQUIRED)
 	if(NOT TARGET CONAN_PKG::libelfin)
 		add_library(CONAN_PKG::libelfin INTERFACE IMPORTED GLOBAL)
 		target_link_libraries(CONAN_PKG::libelfin INTERFACE libelfin::libelfin)
