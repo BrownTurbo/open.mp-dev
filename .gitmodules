@@ -1,6 +1,6 @@
 [submodule "lib/pawn"]
 	path = lib/pawn
-	url = https://github.com/BrownTurbo/pawn-compiler-dev
+	url = https://github.com/openmultiplayer/compiler
 [submodule "lib/pawn-natives"]
 	path = lib/pawn-natives
 	url = https://github.com/openmultiplayer/pawn-natives.git
